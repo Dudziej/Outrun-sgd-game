@@ -2,6 +2,7 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <vector>
+#include <time.h>
 
 //Stale
 #define screenX 1280
@@ -14,6 +15,8 @@
 
 SDL_Window *Window;
 SDL_GLContext Context;
+
+float carAngle = 0.f;
 
 //Konstruktor linii
 struct Line{
@@ -32,7 +35,7 @@ struct Line{
     }
 };
 
-void drawRect(GLfloat color[3], float x1, float y1, float w1, float x2, float y2, float w2)
+void drawRect(GLfloat color[3], float x1, float y1, float w1, float x2, float y2, float w2, float z)
 {
     /*  Ze wzgledu, ze SDL2 nie pozwala
     *   na rysowanie niczego innego niz
@@ -52,8 +55,8 @@ void drawRect(GLfloat color[3], float x1, float y1, float w1, float x2, float y2
     w2 = w2/screenX;
 
     glPushMatrix();
+        glTranslatef(0,0,z);
         glColor3f(color[0], color[1], color[2]);
-        //glTranslatef(-0.125,0.f,0.f);
         glBegin(GL_QUADS);
             glVertex3f(x1-w2,y2,0.f);
             glVertex3f(x2-w1,y1,0.f);
@@ -61,6 +64,21 @@ void drawRect(GLfloat color[3], float x1, float y1, float w1, float x2, float y2
             glVertex3f(x1+w2,y2,0.f);
         glEnd();
     glPopMatrix();
+}
+
+void drawCar(float angle)
+{
+    glDepthMask(GL_FALSE);
+    glDisable(GL_DEPTH_TEST);
+    GLfloat red[3] = {1.f,0.f,0.f};
+    GLfloat black[3] = {0.f,0.f,0.f};
+    drawRect(red,1280.f/2.f,720.f+480.f,300.f,1280.f/2.f,720.f,100.f,-2.f);
+    drawRect(black,350.f+angle,1250.f,50.f,350.f-angle,1050.f,50.f,-2.f);
+    drawRect(black,930.f+angle,1250.f,50.f,930.f-angle,1050.f,50.f,-2.f); 
+    drawRect(black,490.f+angle,810.f,50.f,490.f-angle,610.f,50.f,-2.f);
+    drawRect(black,790.f+angle,810.f,50.f,790.f-angle,610.f,50.f,-2.f);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
 }
 
 void init()
@@ -81,7 +99,10 @@ void viewport()
     // Ustaw wartosci macierzy na domyslna
     glLoadIdentity();
     // Ustaw macierz projekcyjna na ortograficzna
-    gluOrtho2D( 1.0 , 0.0 , 1.0, 0.0);
+    //glOrtho(1.0 , 0.0 , 1.0, 0.0, 0.1, 100);
+    gluPerspective(70.f,1280/720,0.1,100);
+    glTranslatef(0.5,0.5,0);
+    glRotatef(180,0,0,1);
     glMatrixMode( GL_MODELVIEW );
     glLoadIdentity( ); 
 }
@@ -91,9 +112,19 @@ float playerX = 0;
 
 void getkey(const Uint8* keys)
 {
+    carAngle = 0.f;
+    if(speed > 0.f)
+    {
+        speed-=1.f;
+    }
+    if(speed < 0.f)
+    {
+        speed+=1.f;
+    }
     //Sprawdz ktory klawisz jest wcisniety
     if(keys[SDL_SCANCODE_A])
     {
+        carAngle = 20.f;
         if(playerX<-1.f || playerX>1.f){
             playerX+=0.05;
         }
@@ -103,6 +134,7 @@ void getkey(const Uint8* keys)
     }
     if(keys[SDL_SCANCODE_D])
     {
+        carAngle = -20.f;
         if(playerX<-1.f || playerX>1.f){
             playerX-=0.05;
         }
@@ -122,10 +154,10 @@ void getkey(const Uint8* keys)
     if(keys[SDL_SCANCODE_S])
     {
         if(playerX<-1.f || playerX>1.f){
-            speed=80;
+            speed=-100;
         }
         else{
-            speed=60;
+            speed=-200;
         }
     }
 }
@@ -138,6 +170,7 @@ int main(){
         printf("Unable to init SDL: %s\n", SDL_GetError());
         exit(1);
     }
+
     Context = SDL_GL_CreateContext(Window);
 
     //  Tworzymu wektor konstruktorow
@@ -158,6 +191,7 @@ int main(){
     GLfloat grass[3];
     GLfloat rumble[3];
     GLfloat road[3];
+
     while(!done)
     {
         int startPos = pos/segL;
@@ -191,9 +225,10 @@ int main(){
                 for(int i = 0; i <3; i++){road[i] = 0.41;}
             }
             Line p = lines[(i-1)%N];
-            drawRect(grass, 0, p.Y, screenX, 0, l.Y, screenX);
-            drawRect(rumble, p.X, p.Y, p.W*1.2, l.X, l.Y, l.W*1.2);
-            drawRect(road, p.X, p.Y, p.W, l.X, l.Y, l.W);
+            drawCar(carAngle);
+            drawRect(grass, 0, p.Y, screenX*2, 0, l.Y, screenX*2, -1.f);
+            drawRect(rumble, p.X, p.Y, p.W*1.2, l.X, l.Y, l.W*1.2, -1.f);
+            drawRect(road, p.X, p.Y, p.W, l.X, l.Y, l.W, -1.f);
         }
         SDL_GL_SwapWindow(Window);
         while(SDL_PollEvent(&event))
@@ -212,6 +247,7 @@ int main(){
     }
 
     SDL_DestroyWindow(Window);
+    Window = NULL;
     SDL_Quit();
     return 0;
 }
