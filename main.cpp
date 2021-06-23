@@ -2,21 +2,34 @@
 #include <GL/gl.h>
 #include <GL/glu.h>
 #include <vector>
-#include <time.h>
+#include <cstring>
+#include <string>
+#include <chrono>
+#include "car.h"
+#include "states.h"
 
-//Stale
-#define screenX 1280
-#define screenY 720
+
 //Glebokosc kamery
 #define camD 0.84
 //Dlugosc segmentow "linii"
 #define segL 200
 #define roadW 2000
 
+//Stale
+#define screenX 1280
+#define screenY 720
+
+//  Zmienne globalne
+float carAngle = 0.f;
+int speed=0;
+float playerX = 0;
+
+
 SDL_Window *Window;
+SDL_Renderer *renderer;
 SDL_GLContext Context;
 
-float carAngle = 0.f;
+
 
 //Konstruktor linii
 struct Line{
@@ -34,81 +47,6 @@ struct Line{
         W = scale * roadW  * screenX/2;
     }
 };
-
-void drawRect(GLfloat color[3], float x1, float y1, float w1, float x2, float y2, float w2, float z)
-{
-    /*  Ze wzgledu, ze SDL2 nie pozwala
-    *   na rysowanie niczego innego niz
-    *   rectangle jestesmy zmuszeni
-    *   zejsc na poziom OpenGL
-    */  
-
-    /*  OpenGL przyjmuje wartosci z zakresu 0 do 1
-    *   dlatego dzielimy pozycje X,Y na ekranie
-    *   przez wartosci Wysokosci i Szerokosci ekranu
-    */
-    x1 = x1/screenX;
-    x2 = x2/screenX;
-    y1 = y1/screenY;
-    y2 = y2/screenY;
-    w1 = w1/screenX;
-    w2 = w2/screenX;
-
-    glPushMatrix();
-        glTranslatef(0,0,z);
-        glColor3f(color[0], color[1], color[2]);
-        glBegin(GL_QUADS);
-            glVertex3f(x1-w2,y2,0.f);
-            glVertex3f(x2-w1,y1,0.f);
-            glVertex3f(x2+w1,y1,0.f);
-            glVertex3f(x1+w2,y2,0.f);
-        glEnd();
-    glPopMatrix();
-}
-
-void drawCar(float angle)
-{
-    glDepthMask(GL_FALSE);
-    glDisable(GL_DEPTH_TEST);
-    GLfloat red[3] = {1.f,0.f,0.f};
-    GLfloat black[3] = {0.f,0.f,0.f};
-    drawRect(red,1280.f/2.f,720.f+480.f,300.f,1280.f/2.f,720.f,100.f,-2.f);
-    drawRect(black,350.f+angle,1250.f,50.f,350.f-angle,1050.f,50.f,-2.f);
-    drawRect(black,930.f+angle,1250.f,50.f,930.f-angle,1050.f,50.f,-2.f); 
-    drawRect(black,490.f+angle,810.f,50.f,490.f-angle,610.f,50.f,-2.f);
-    drawRect(black,790.f+angle,810.f,50.f,790.f-angle,610.f,50.f,-2.f);
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
-}
-
-void init()
-{
-    //Wyczysc ekran i glebie kolorow
-    glShadeModel( GL_SMOOTH );
-    glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
-    glClearDepth( 1.0f );
-    glEnable( GL_DEPTH_TEST );
-    glDepthFunc( GL_LEQUAL );
-    glHint( GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST );
-}
-
-void viewport()
-{
-    // Przejdz na projektowanie projekcyjne
-    glMatrixMode( GL_PROJECTION );
-    // Ustaw wartosci macierzy na domyslna
-    glLoadIdentity();
-    // Ustaw macierz projekcyjna na ortograficzna
-    //glOrtho(1.0 , 0.0 , 1.0, 0.0, 0.1, 100);
-    gluPerspective(70.f,1280/720,0.1,100);
-    glTranslatef(0.5,0.5,0);
-    glRotatef(180,0,0,1);
-    glMatrixMode( GL_MODELVIEW );
-    glLoadIdentity( ); 
-}
-
-int speed=0;
-float playerX = 0;
 
 void getkey(const Uint8* keys)
 {
@@ -145,10 +83,10 @@ void getkey(const Uint8* keys)
     if(keys[SDL_SCANCODE_W])
     {
         if(playerX<-1.f || playerX>1.f){
-            speed=100;
+            speed=200;
         }
         else{
-            speed=200;
+            speed=400;
         }
     }
     if(keys[SDL_SCANCODE_S])
@@ -170,9 +108,8 @@ int main(){
         printf("Unable to init SDL: %s\n", SDL_GetError());
         exit(1);
     }
-
+    renderer = SDL_CreateRenderer(Window, -1, 0);
     Context = SDL_GL_CreateContext(Window);
-
     //  Tworzymu wektor konstruktorow
     //  i przypisujemy mu wartosci
     std::vector<Line> lines;
@@ -191,63 +128,92 @@ int main(){
     GLfloat grass[3];
     GLfloat rumble[3];
     GLfloat road[3];
-
+    float a,b = 0.f,delta;
+    //float timer = 0.f;
+    auto start = std::chrono::high_resolution_clock::now();
     while(!done)
     {
-        int startPos = pos/segL;
-        float x=0,dx=0;
-        init();
-        viewport();
-        glClearColor(0.55, 0.71, 0.73, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glLoadIdentity();
-        for(int i=startPos;i<startPos+300;i++)
+        a = SDL_GetTicks();
+        //timer = SDL_GetTicks();
+        delta = a - b;
+        if (delta > 1000/144.0)
         {
-            Line &l = lines[i%N];
-            x+=dx;
-            dx+=l.curve;
-            l.project(playerX*roadW-x, 1500, startPos*segL - (i>=N?N*segL:0));
-            x+=dx;
-            //Zmien kolor co 3 pasek
-            if((i/3)%2)
+            b = a;      
+            int startPos = pos/segL;
+            float x=0,dx=0;
+            init();
+            viewport();
+            glClearColor(0.55, 0.71, 0.73, 1.f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glLoadIdentity();
+            //Interuj przez nastepne widoczne paski
+            for(int i=startPos;i<startPos+300;i++)
             {
-                grass[0] = 0.06;
-                grass[1] = 0.78;
-                grass[2] = 0.06;
-                for(int i = 0; i <3; i++){rumble[i] = 1.f;}
-                for(int i = 0; i <3; i++){road[i] = 0.43;}
+                Line &l = lines[i%N];
+                x+=dx;
+                dx+=l.curve;
+                l.project(playerX*roadW-x, 1500, startPos*segL - (i>=N?N*segL:0));
+                x+=dx;
+                //Zmien kolor co 3 pasek
+                if((i/3)%2)
+                {
+                    grass[0] = 0.06;
+                    grass[1] = 0.78;
+                    grass[2] = 0.06;
+                    for(int i = 0; i <3; i++){rumble[i] = 1.f;}
+                    for(int i = 0; i <3; i++){road[i] = 0.43;}
+                }
+                else{
+                    grass[0] = 0.f;
+                    grass[1] = 0.6;
+                    grass[2] = 0.f;
+                    for(int i = 0; i <3; i++){rumble[i] = 0.f;}
+                    for(int i = 0; i <3; i++){road[i] = 0.41;}
+                }
+                Line p = lines[(i-1)%N];
+                // Rysuj auto, trewe, ulice oraz barierki
+                drawCar(carAngle);
+                drawRect(grass, 0, p.Y, screenX*2, 0, l.Y, screenX*2, -1.f);
+                drawRect(rumble, p.X, p.Y, p.W*1.2, l.X, l.Y, l.W*1.2, -1.f);
+                drawRect(road, p.X, p.Y, p.W, l.X, l.Y, l.W, -1.f);
             }
-            else{
-                grass[0] = 0.f;
-                grass[1] = 0.6;
-                grass[2] = 0.f;
-                for(int i = 0; i <3; i++){rumble[i] = 0.f;}
-                for(int i = 0; i <3; i++){road[i] = 0.41;}
-            }
-            Line p = lines[(i-1)%N];
-            drawCar(carAngle);
-            drawRect(grass, 0, p.Y, screenX*2, 0, l.Y, screenX*2, -1.f);
-            drawRect(rumble, p.X, p.Y, p.W*1.2, l.X, l.Y, l.W*1.2, -1.f);
-            drawRect(road, p.X, p.Y, p.W, l.X, l.Y, l.W, -1.f);
-        }
-        SDL_GL_SwapWindow(Window);
-        while(SDL_PollEvent(&event))
-        {
-            if(event.type == SDL_QUIT) {done=1;}
-            if(event.type == SDL_KEYDOWN)
+            // Zaktualizuj okno z zawartoscia OpenGL
+            SDL_GL_SwapWindow(Window);
+            while(SDL_PollEvent(&event))
             {
-                if(event.key.keysym.sym == SDLK_ESCAPE) {done=1;}
-            } 
+                if(event.type == SDL_QUIT) {done=1;}
+                if(event.type == SDL_KEYDOWN)
+                {
+                    if(event.key.keysym.sym == SDLK_ESCAPE) {done=1;}
+                } 
+            }
+            //  Zapisz zmienna keys jako stan klawiatury
+            keys = SDL_GetKeyboardState(NULL);
+            getkey(keys);
+            pos+=speed;
+            //Gdy auto zatoczy kolo zrestartuj zegar
+            printf("%d\n", pos);
+            if(pos>=320000)
+            {
+                start = std::chrono::high_resolution_clock::now();
+            }
+            //  Zamien typ chrono w typ float
+            float dur_seconds = std::chrono::duration<float>(std::chrono::high_resolution_clock::now() - start).count();
+            //  Zamien float w string (*char[])
+            std::string buf = std::to_string(dur_seconds);
+            //  Zmien dokladnosc do 3 znakow (razem z "." sa 4 )
+            buf.resize(4);
+            //  Ustaw nazwe okna
+            SDL_SetWindowTitle(Window, buf.c_str());
+            while (pos >= N*segL) pos-=N*segL;
+            while (pos < 0) pos += N*segL;
         }
-        keys = SDL_GetKeyboardState(NULL);
-        getkey(keys);
-        pos+=speed;
-        while (pos >= N*segL) pos-=N*segL;
-        while (pos < 0) pos += N*segL;
     }
 
+    //Zniszcz okno i wyczysc pamiec
     SDL_DestroyWindow(Window);
     Window = NULL;
+    //Oddaj sterowanie do systemu
     SDL_Quit();
     return 0;
 }
